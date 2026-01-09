@@ -27,6 +27,10 @@
 
 ================================================================================
 */
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom, Write};
+use color_eyre::{Result, eyre::{eyre, Context}};
+use std::path::Path;
 
 pub const HEADER_SIZE: usize = 4096;
 pub const OFFSET_MAGIC: usize = 0;
@@ -35,12 +39,46 @@ pub const OFFSET_SCHEMA_OFFSET: usize = 12;
 pub const OFFSET_SCHEMA_SIZE: usize = 16;
 pub const OFFSET_SEGMENT_DIR_OFFSET: usize = 20;
 pub const OFFSET_SEGMENT_COUNT: usize = 28;
-
 pub const MAGIC: &[u8; 8] = b"ZKDBv01\0";
+pub const PAGE_SIZE: u32 = 4096;
 
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use color_eyre::{Result, eyre::eyre, eyre::Context};
+pub fn create<P: AsRef<Path>>(path: P) -> Result<()> {
+    let mut header = [0u8; HEADER_SIZE];
+
+    // magic
+    header[OFFSET_MAGIC..OFFSET_MAGIC + 8].copy_from_slice(MAGIC);
+
+    // page_size
+    header[OFFSET_PAGE_SIZE..OFFSET_PAGE_SIZE + 4]
+        .copy_from_slice(&PAGE_SIZE.to_le_bytes());
+
+    // schema_offset
+    header[OFFSET_SCHEMA_OFFSET..OFFSET_SCHEMA_OFFSET + 4]
+        .copy_from_slice(&0u32.to_le_bytes());
+
+    // schema_size
+    header[OFFSET_SCHEMA_SIZE..OFFSET_SCHEMA_SIZE + 4]
+        .copy_from_slice(&0u32.to_le_bytes());
+
+    // segment_dir_offset
+    header[OFFSET_SEGMENT_DIR_OFFSET..OFFSET_SEGMENT_DIR_OFFSET + 8]
+        .copy_from_slice(&0u64.to_le_bytes());
+
+    // segment_count
+    header[OFFSET_SEGMENT_COUNT..OFFSET_SEGMENT_COUNT + 4]
+        .copy_from_slice(&0u32.to_le_bytes());
+
+    let mut file = File::create(&path)
+        .context("Failed to create ZKDB file")?;
+
+    file.write_all(&header)
+        .context("Failed to write ZKDB header")?;
+
+    file.sync_all()
+        .context("Failed to fsync ZKDB header")?;
+
+    Ok(())
+}
 
 pub fn validate_magic(header: &[u8]) -> Result<()> {
     if header.len() < 8 {
@@ -111,3 +149,5 @@ pub fn read_and_validate_header(file: &mut File) -> Result<[u8; HEADER_SIZE]> {
 
     Ok(header)
 }
+
+
